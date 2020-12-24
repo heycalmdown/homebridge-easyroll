@@ -1,6 +1,4 @@
-import { clear } from 'console';
 import { Service, PlatformAccessory, CharacteristicValue, CharacteristicSetCallback, CharacteristicGetCallback } from 'homebridge';
-import { send } from 'process';
 import * as request from 'superagent';
 
 import { EasyrollHomebridgePlatform } from './platform';
