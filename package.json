@@ -1,16 +1,15 @@
 {
-  "private": true,
-  "displayName": "Plugin Name",
-  "name": "homebridge-plugin-name",
-  "version": "1.0.0",
+  "displayName": "Homebridge Easyroll",
+  "name": "homebridge-easyroll",
+  "version": "0.1.0",
   "description": "A short description about what your plugin does.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git://github.com/USERNAME/GITHUB_PROJECT_NAME.git"
+    "url": "git://github.com/heycalmdown/homebridge-easyroll.git"
   },
   "bugs": {
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME/issues"
+    "url": "https://github.com/heycalmdown/homebridge-easyroll/issues"
   },
   "engines": {
     "node": ">=10.17.0",
@@ -26,15 +25,16 @@
   "keywords": [
     "homebridge-plugin"
   ],
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^14.14.6",
+    "@types/superagent": "^4.1.10",
     "@typescript-eslint/eslint-plugin": "^4.6.1",
     "@typescript-eslint/parser": "^4.6.1",
     "eslint": "^7.13.0",
     "homebridge": "^1.2.3",
     "nodemon": "^2.0.6",
     "rimraf": "^3.0.2",
+    "superagent": "^6.1.0",
     "ts-node": "^9.0.0",
     "typescript": "^4.0.5"
   }

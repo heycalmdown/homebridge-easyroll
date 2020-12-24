@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
+  "pluginAlias": "EasyrollHomebridgePlugin",
   "pluginType": "platform",
   "singular": true,
   "schema": {

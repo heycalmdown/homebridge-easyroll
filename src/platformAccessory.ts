@@ -1,13 +1,16 @@
+import { clear } from 'console';
 import { Service, PlatformAccessory, CharacteristicValue, CharacteristicSetCallback, CharacteristicGetCallback } from 'homebridge';
+import { send } from 'process';
+import * as request from 'superagent';
 
-import { ExampleHomebridgePlatform } from './platform';
+import { EasyrollHomebridgePlatform } from './platform';
 
 /**
  * Platform Accessory
  * An instance of this class is created for each accessory your platform registers
  * Each accessory may expose multiple services of different service types.
  */
-export class ExamplePlatformAccessory {
+export class EasyrollAccessory {
   private service: Service;
 
   /**
@@ -15,12 +18,15 @@ export class ExamplePlatformAccessory {
    * You should implement your own code to track the state of your accessory
    */
   private exampleStates = {
-    On: false,
-    Brightness: 100,
+    On: true,
+    Position: 100,
+    TargetPosition: -1,
   };
 
+  private intervalPosition: NodeJS.Timeout | null = null;
+
   constructor(
-    private readonly platform: ExampleHomebridgePlatform,
+    private readonly platform: EasyrollHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
   ) {
 
@@ -32,64 +38,27 @@ export class ExamplePlatformAccessory {
 
     // get the LightBulb service if it exists, otherwise create a new LightBulb service
     // you can create multiple services for each accessory
-    this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
+    this.service = this.accessory.getService(this.platform.Service.WindowCovering)
+      || this.accessory.addService(this.platform.Service.WindowCovering);
 
     // set the service name, this is what is displayed as the default name on the Home app
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
     this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.exampleDisplayName);
 
-    // each service must implement at-minimum the "required characteristics" for the given service type
-    // see https://developers.homebridge.io/#/service/Lightbulb
-
-    // register handlers for the On/Off Characteristic
     this.service.getCharacteristic(this.platform.Characteristic.On)
       .on('set', this.setOn.bind(this))                // SET - bind to the `setOn` method below
       .on('get', this.getOn.bind(this));               // GET - bind to the `getOn` method below
 
-    // register handlers for the Brightness Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-      .on('set', this.setBrightness.bind(this));       // SET - bind to the 'setBrightness` method below
+    this.service.getCharacteristic(this.platform.Characteristic.PositionState)
+      .on('get', this.getState.bind(this));
 
+    this.service.getCharacteristic(this.platform.Characteristic.CurrentPosition)
+      .on('get', this.getPosition.bind(this))
+      .on('set', this.setPosition.bind(this));
 
-    /**
-     * Creating multiple services of the same type.
-     * 
-     * To avoid "Cannot add a Service with the same UUID another Service without also defining a unique 'subtype' property." error,
-     * when creating multiple services of the same type, you need to use the following syntax to specify a name and subtype id:
-     * this.accessory.getService('NAME') || this.accessory.addService(this.platform.Service.Lightbulb, 'NAME', 'USER_DEFINED_SUBTYPE_ID');
-     * 
-     * The USER_DEFINED_SUBTYPE must be unique to the platform accessory (if you platform exposes multiple accessories, each accessory
-     * can use the same sub type id.)
-     */
-
-    // Example: add two "motion sensor" services to the accessory
-    const motionSensorOneService = this.accessory.getService('Motion Sensor One Name') ||
-      this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor One Name', 'YourUniqueIdentifier-1');
-
-    const motionSensorTwoService = this.accessory.getService('Motion Sensor Two Name') ||
-      this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor Two Name', 'YourUniqueIdentifier-2');
-
-    /**
-     * Updating characteristics values asynchronously.
-     * 
-     * Example showing how to update the state of a Characteristic asynchronously instead
-     * of using the `on('get')` handlers.
-     * Here we change update the motion sensor trigger states on and off every 10 seconds
-     * the `updateCharacteristic` method.
-     * 
-     */
-    let motionDetected = false;
-    setInterval(() => {
-      // EXAMPLE - inverse the trigger
-      motionDetected = !motionDetected;
-
-      // push the new value to HomeKit
-      motionSensorOneService.updateCharacteristic(this.platform.Characteristic.MotionDetected, motionDetected);
-      motionSensorTwoService.updateCharacteristic(this.platform.Characteristic.MotionDetected, !motionDetected);
-
-      this.platform.log.debug('Triggering motionSensorOneService:', motionDetected);
-      this.platform.log.debug('Triggering motionSensorTwoService:', !motionDetected);
-    }, 10000);
+    this.service.getCharacteristic(this.platform.Characteristic.TargetPosition)
+      .on('get', this.getTargetPosition.bind(this))
+      .on('set', this.setTargetPosition.bind(this));
   }
 
   /**
@@ -133,19 +102,79 @@ export class ExamplePlatformAccessory {
     callback(null, isOn);
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, changing the Brightness
-   */
-  setBrightness(value: CharacteristicValue, callback: CharacteristicSetCallback) {
 
-    // implement your own code to set the brightness
-    this.exampleStates.Brightness = value as number;
+  async getPosition(callback: CharacteristicSetCallback) {
+    const currentPosition = await this.getEasyrollInfo();
+    this.platform.log.debug('Get Characteristic Position', currentPosition);
+    callback(null, currentPosition);
+  }
 
-    this.platform.log.debug('Set Characteristic Brightness -> ', value);
-
-    // you must call the callback function
+  setPosition(value: CharacteristicValue, callback: CharacteristicSetCallback) {
+    this.platform.log.debug('Set Characteristic Position -> ', value);
     callback(null);
   }
 
+  async getTargetPosition(callback: CharacteristicSetCallback) {
+    if (this.exampleStates.TargetPosition < 0) {
+      const currentPosition = await this.getEasyrollInfo();
+      this.exampleStates.TargetPosition = currentPosition;
+    }
+    this.platform.log.debug('Get Characteristic Target Position', this.exampleStates.TargetPosition);
+    callback(null, this.exampleStates.TargetPosition);
+  }
+
+  private async getEasyrollInfo(): Promise<number> {
+    const res = await request.get('http://192.168.0.70:20318/lstinfo');
+    const info = JSON.parse(res.text);
+    info.position = Math.floor(info.position);
+    this.exampleStates.Position = info.position;
+    if (this.exampleStates.TargetPosition < 0) {
+      this.exampleStates.TargetPosition = this.exampleStates.Position;
+    }
+    return info.position;
+  }
+
+  private async setEasyrollPosition(target: number) {
+    return request.post('http://192.168.0.70:20318/action')
+      .send({
+        mode: 'level',
+        command: target,
+      });
+  }
+
+  async setTargetPosition(value: CharacteristicValue, callback: CharacteristicSetCallback) {
+    this.platform.log.debug('Set Characteristic Target Position -> ', value);
+    this.exampleStates.TargetPosition = value as number;
+    callback(null);
+
+    await this.setEasyrollPosition(this.exampleStates.TargetPosition);
+    
+    if (this.intervalPosition) {
+      clearInterval(this.intervalPosition);
+    }
+    this.intervalPosition = setInterval(async () => {
+      const currentPosition = await this.getEasyrollInfo();
+      this.platform.log.debug(`Moving ${value} => ${currentPosition}}`);
+      const diff = Math.abs(currentPosition - this.exampleStates.TargetPosition);
+      if (diff < 4) {
+        this.exampleStates.Position = this.exampleStates.TargetPosition;
+        this.service.updateCharacteristic(this.platform.Characteristic.CurrentPosition, this.exampleStates.TargetPosition);
+
+        if (this.intervalPosition) {
+          clearInterval(this.intervalPosition);
+        }
+      }
+    }, 1000);
+  }
+
+  getState(callback: CharacteristicSetCallback) {
+    this.platform.log.debug('Get Characteristic State');
+
+    callback(null, this.platform.Characteristic.PositionState.STOPPED);
+  }
+
+  setState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
+    this.platform.log.debug('Set Characteristic State -> ', value);
+    callback(null);
+  }
 }
