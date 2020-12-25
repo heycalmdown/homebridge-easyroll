@@ -38,8 +38,6 @@ export class EasyrollAccessory {
       .setCharacteristic(this.platform.Characteristic.Model, 'Default-Model')
       .setCharacteristic(this.platform.Characteristic.SerialNumber, 'Default-Serial');
 
-    // get the LightBulb service if it exists, otherwise create a new LightBulb service
-    // you can create multiple services for each accessory
     this.service = this.accessory.getService(this.platform.Service.WindowCovering)
       || this.accessory.addService(this.platform.Service.WindowCovering);
 
@@ -57,6 +55,48 @@ export class EasyrollAccessory {
     this.service.getCharacteristic(this.platform.Characteristic.TargetPosition)
       .on('get', this.getTargetPosition.bind(this))
       .on('set', this.setTargetPosition.bind(this));
+
+
+    const buttons = ['M1', 'M2', 'M3']
+      .map(name => this.accessory.getService(name) || this.accessory.addService(this.platform.Service.Switch, name, name));
+
+    buttons.forEach(b => {
+      b.getCharacteristic(this.platform.Characteristic.On)
+        .on('get', cb => cb(null, false))
+        .on('set', async (input: CharacteristicValue, cb: CharacteristicSetCallback) => {
+          this.platform.log.debug('Set Characteristic ProgrammableSwitchEvent ->', input);
+          cb(null);
+
+          await this.sendEasyrollCommand('M1');
+          setTimeout(() => {
+            b.updateCharacteristic(this.platform.Characteristic.On, false);
+          }, 500);
+          this.watchMoving();
+        });
+      this.service.addLinkedService(b);
+    });
+  }
+  
+  private watchMoving() {
+    if (this.intervalPosition) {
+      clearInterval(this.intervalPosition);
+    }
+    let prev = this.exampleStates.Position;
+    this.intervalPosition = setInterval(async () => {
+      const currentPosition = await this.getEasyrollInfo();
+      this.platform.log.debug(`Moving ${prev} => ${currentPosition}`);
+      if (prev === currentPosition) {
+        this.exampleStates.Position = currentPosition;
+        this.exampleStates.TargetPosition = currentPosition;
+        this.service.updateCharacteristic(this.platform.Characteristic.CurrentPosition, currentPosition);
+        this.service.updateCharacteristic(this.platform.Characteristic.TargetPosition, currentPosition);
+
+        if (this.intervalPosition) {
+          clearInterval(this.intervalPosition);
+        }
+      }
+      prev = currentPosition;
+    }, 1000);
   }
 
   /**
@@ -116,28 +156,21 @@ export class EasyrollAccessory {
       });
   }
 
+  private async sendEasyrollCommand(command: string) {
+    return request.post('http://192.168.0.70:20318/action')
+      .send({
+        mode: 'general',
+        command: command,
+      });
+  }
+
   async setTargetPosition(value: CharacteristicValue, callback: CharacteristicSetCallback) {
     this.platform.log.debug('Set Characteristic Target Position -> ', value);
     this.exampleStates.TargetPosition = value as number;
     callback(null);
 
     await this.setEasyrollPosition(this.exampleStates.TargetPosition);
-    
-    if (this.intervalPosition) {
-      clearInterval(this.intervalPosition);
-    }
-    this.intervalPosition = setInterval(async () => {
-      const currentPosition = await this.getEasyrollInfo();
-      this.platform.log.debug(`Moving ${value} => ${currentPosition}}`);
-      const diff = Math.abs(currentPosition - this.exampleStates.TargetPosition);
-      if (diff < 4) {
-        this.exampleStates.Position = this.exampleStates.TargetPosition;
-        this.service.updateCharacteristic(this.platform.Characteristic.CurrentPosition, this.exampleStates.TargetPosition);
 
-        if (this.intervalPosition) {
-          clearInterval(this.intervalPosition);
-        }
-      }
-    }, 1000);
+    this.watchMoving();
   }
 }
