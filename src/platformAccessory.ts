@@ -3,6 +3,10 @@ import * as request from 'superagent';
 
 import { EasyrollHomebridgePlatform } from './platform';
 
+function posFlip(pos: number): number {
+  return 100 - pos;
+}
+
 /**
  * Platform Accessory
  * An instance of this class is created for each accessory your platform registers
@@ -47,12 +51,8 @@ export class EasyrollAccessory {
       .on('set', this.setOn.bind(this))                // SET - bind to the `setOn` method below
       .on('get', this.getOn.bind(this));               // GET - bind to the `getOn` method below
 
-    this.service.getCharacteristic(this.platform.Characteristic.PositionState)
-      .on('get', this.getState.bind(this));
-
     this.service.getCharacteristic(this.platform.Characteristic.CurrentPosition)
-      .on('get', this.getPosition.bind(this))
-      .on('set', this.setPosition.bind(this));
+      .on('get', this.getPosition.bind(this));
 
     this.service.getCharacteristic(this.platform.Characteristic.TargetPosition)
       .on('get', this.getTargetPosition.bind(this))
@@ -74,29 +74,10 @@ export class EasyrollAccessory {
     callback(null);
   }
 
-  /**
-   * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   * 
-   * GET requests should return as fast as possbile. A long delay here will result in
-   * HomeKit being unresponsive and a bad user experience in general.
-   * 
-   * If your device takes time to respond you should update the status of your device
-   * asynchronously instead using the `updateCharacteristic` method instead.
-
-   * @example
-   * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
-   */
   getOn(callback: CharacteristicGetCallback) {
-
-    // implement your own code to check if the device is on
     const isOn = this.exampleStates.On;
 
     this.platform.log.debug('Get Characteristic On ->', isOn);
-
-    // you must call the callback function
-    // the first argument should be null if there were no errors
-    // the second argument should be the value to return
     callback(null, isOn);
   }
 
@@ -105,11 +86,6 @@ export class EasyrollAccessory {
     const currentPosition = await this.getEasyrollInfo();
     this.platform.log.debug('Get Characteristic Position', currentPosition);
     callback(null, currentPosition);
-  }
-
-  setPosition(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-    this.platform.log.debug('Set Characteristic Position -> ', value);
-    callback(null);
   }
 
   async getTargetPosition(callback: CharacteristicSetCallback) {
@@ -124,7 +100,7 @@ export class EasyrollAccessory {
   private async getEasyrollInfo(): Promise<number> {
     const res = await request.get('http://192.168.0.70:20318/lstinfo');
     const info = JSON.parse(res.text);
-    info.position = Math.floor(info.position);
+    info.position = posFlip(Math.floor(info.position));
     this.exampleStates.Position = info.position;
     if (this.exampleStates.TargetPosition < 0) {
       this.exampleStates.TargetPosition = this.exampleStates.Position;
@@ -136,7 +112,7 @@ export class EasyrollAccessory {
     return request.post('http://192.168.0.70:20318/action')
       .send({
         mode: 'level',
-        command: target,
+        command: posFlip(target),
       });
   }
 
@@ -163,16 +139,5 @@ export class EasyrollAccessory {
         }
       }
     }, 1000);
-  }
-
-  getState(callback: CharacteristicSetCallback) {
-    this.platform.log.debug('Get Characteristic State');
-
-    callback(null, this.platform.Characteristic.PositionState.STOPPED);
-  }
-
-  setState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-    this.platform.log.debug('Set Characteristic State -> ', value);
-    callback(null);
   }
 }
