@@ -60,14 +60,14 @@ export class EasyrollAccessory {
     const buttons = ['M1', 'M2', 'M3']
       .map(name => this.accessory.getService(name) || this.accessory.addService(this.platform.Service.Switch, name, name));
 
-    buttons.forEach(b => {
+    buttons.forEach((b, i) => {
       b.getCharacteristic(this.platform.Characteristic.On)
         .on('get', cb => cb(null, false))
         .on('set', async (input: CharacteristicValue, cb: CharacteristicSetCallback) => {
           this.platform.log.debug('Set Characteristic ProgrammableSwitchEvent ->', input);
           cb(null);
 
-          await this.sendEasyrollCommand('M1');
+          await this.sendEasyrollCommand('M' + (i + 1));
           setTimeout(() => {
             b.updateCharacteristic(this.platform.Characteristic.On, false);
           }, 500);
@@ -85,12 +85,13 @@ export class EasyrollAccessory {
     this.intervalPosition = setInterval(async () => {
       const currentPosition = await this.getEasyrollInfo();
       this.platform.log.debug(`Moving ${prev} => ${currentPosition}`);
-      if (prev === currentPosition) {
-        this.exampleStates.Position = currentPosition;
-        this.exampleStates.TargetPosition = currentPosition;
-        this.service.updateCharacteristic(this.platform.Characteristic.CurrentPosition, currentPosition);
-        this.service.updateCharacteristic(this.platform.Characteristic.TargetPosition, currentPosition);
+      this.service.updateCharacteristic(this.platform.Characteristic.CurrentPosition, prev);
+      this.service.updateCharacteristic(this.platform.Characteristic.TargetPosition, currentPosition);
 
+      this.exampleStates.Position = prev;
+      this.exampleStates.TargetPosition = currentPosition;
+
+      if (prev === currentPosition) {
         if (this.intervalPosition) {
           clearInterval(this.intervalPosition);
         }
