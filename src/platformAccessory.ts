@@ -1,24 +1,35 @@
-import { Service, PlatformAccessory, CharacteristicValue, CharacteristicSetCallback, CharacteristicGetCallback } from 'homebridge';
+import {
+  AccessoryConfig,
+  AccessoryPlugin,
+  API,
+  CharacteristicEventTypes,
+  CharacteristicGetCallback,
+  CharacteristicSetCallback,
+  CharacteristicValue,
+  HAP,
+  Logging,
+  Service,
+} from 'homebridge';
 import * as request from 'superagent';
-
-import { EasyrollHomebridgePlatform } from './platform';
 
 function posFlip(pos: number): number {
   return 100 - pos;
 }
 
-/**
- * Platform Accessory
- * An instance of this class is created for each accessory your platform registers
- * Each accessory may expose multiple services of different service types.
- */
-export class EasyrollAccessory {
-  private service: Service;
+let hap: HAP;
 
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
+/*
+ * Initializer function called when the plugin is loaded.
+ */
+export = (api: API) => {
+  hap = api.hap;
+  api.registerAccessory('homebridge-easyroll', 'easyroll', EasyrollAccessory);
+};
+
+class EasyrollAccessory implements AccessoryPlugin {
+  private readonly log: Logging;
+  private readonly name: string;
+  private readonly ip: string;
   private exampleStates = {
     On: true,
     Position: 100,
@@ -27,56 +38,125 @@ export class EasyrollAccessory {
 
   private intervalPosition: NodeJS.Timeout | null = null;
 
-  constructor(
-    private readonly platform: EasyrollHomebridgePlatform,
-    private readonly accessory: PlatformAccessory,
-  ) {
+  private readonly informationService: Service;
+  private readonly service: Service;
+  private readonly buttons: Service[];
 
-    // set accessory information
-    this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Default-Manufacturer')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Default-Model')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, 'Default-Serial');
+  constructor(log: Logging, config: AccessoryConfig) {
+    this.log = log;
+    this.name = config.name;
+    this.ip = config.ip as string;
 
-    this.service = this.accessory.getService(this.platform.Service.WindowCovering)
-      || this.accessory.addService(this.platform.Service.WindowCovering);
+    this.informationService = new hap.Service.AccessoryInformation()
+      .setCharacteristic(hap.Characteristic.Manufacturer, 'Default-Manufacturer')
+      .setCharacteristic(hap.Characteristic.Model, 'Default-Model')
+      .setCharacteristic(hap.Characteristic.SerialNumber, 'Default-Serial');
 
-    // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.exampleDisplayName);
+    this.service = new hap.Service.WindowCovering(this.name);
+    this.service.getCharacteristic(hap.Characteristic.On)
+      .on(CharacteristicEventTypes.SET, (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
+        this.exampleStates.On = value as boolean;
+        log.debug('Set Characteristic On ->', value);
+        callback(null);
+      })
+      .on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
+        log.debug('Get Characteristic On ->', this.exampleStates.On);
+        callback(null, this.exampleStates.On);
+      });
+    this.service.getCharacteristic(hap.Characteristic.CurrentPosition)
+      .on(CharacteristicEventTypes.GET, async (callback: CharacteristicSetCallback) => {
+        const currentPosition = await this.getEasyrollInfo();
+        log.debug('Get Characteristic Position', currentPosition);
+        callback(null, currentPosition);
+      });
 
-    this.service.getCharacteristic(this.platform.Characteristic.On)
-      .on('set', this.setOn.bind(this))                // SET - bind to the `setOn` method below
-      .on('get', this.getOn.bind(this));               // GET - bind to the `getOn` method below
+    this.service.getCharacteristic(hap.Characteristic.TargetPosition)
+      .on(CharacteristicEventTypes.GET, async (callback: CharacteristicSetCallback) => {
+        if (this.exampleStates.TargetPosition < 0) {
+          const currentPosition = await this.getEasyrollInfo();
+          this.exampleStates.TargetPosition = currentPosition;
+        }
+        log.debug('Get Characteristic Target Position', this.exampleStates.TargetPosition);
+        callback(null, this.exampleStates.TargetPosition);
+      })
+      .on(CharacteristicEventTypes.SET, async (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
+        log.debug('Set Characteristic Target Position -> ', value);
+        this.exampleStates.TargetPosition = value as number;
+        callback(null);
+    
+        await this.setEasyrollPosition(this.exampleStates.TargetPosition);
+    
+        this.watchMoving();
+      });
 
-    this.service.getCharacteristic(this.platform.Characteristic.CurrentPosition)
-      .on('get', this.getPosition.bind(this));
 
-    this.service.getCharacteristic(this.platform.Characteristic.TargetPosition)
-      .on('get', this.getTargetPosition.bind(this))
-      .on('set', this.setTargetPosition.bind(this));
-
-
-    const buttons = ['M1', 'M2', 'M3']
-      .map(name => this.accessory.getService(name) || this.accessory.addService(this.platform.Service.Switch, name, name));
-
-    buttons.forEach((b, i) => {
-      b.getCharacteristic(this.platform.Characteristic.On)
-        .on('get', cb => cb(null, false))
-        .on('set', async (input: CharacteristicValue, cb: CharacteristicSetCallback) => {
-          this.platform.log.debug('Set Characteristic ProgrammableSwitchEvent ->', input);
+    this.buttons = ['M1', 'M2', 'M3'].map(name => new hap.Service.Switch(name, name));
+    this.buttons.forEach((b, i) => {
+      b.getCharacteristic(hap.Characteristic.On)
+        .on(CharacteristicEventTypes.GET, cb => cb(null, false))
+        .on(CharacteristicEventTypes.SET, async (input: CharacteristicValue, cb: CharacteristicSetCallback) => {
+          log.debug('Set Characteristic ProgrammableSwitchEvent ->', input);
           cb(null);
 
           await this.sendEasyrollCommand('M' + (i + 1));
           setTimeout(() => {
-            b.updateCharacteristic(this.platform.Characteristic.On, false);
+            b.updateCharacteristic(hap.Characteristic.On, false);
           }, 500);
           this.watchMoving();
         });
       this.service.addLinkedService(b);
     });
+
+    log.info('Switch finished initializing!');
   }
-  
+
+  /*
+   * This method is optional to implement. It is called when HomeKit ask to identify the accessory.
+   * Typical this only ever happens at the pairing process.
+   */
+  identify(): void {
+    this.log('Identify!');
+  }
+
+  /*
+   * This method is called directly after creation of this instance.
+   * It should return all services which should be added to the accessory.
+   */
+  getServices(): Service[] {
+    return [
+      this.informationService,
+      this.service,
+      ...this.buttons,
+    ];
+  }
+
+  private async getEasyrollInfo(): Promise<number> {
+    const res = await request.get(`http://${this.ip}:20318/lstinfo`);
+    const info = JSON.parse(res.text);
+    info.position = posFlip(Math.floor(info.position));
+    this.exampleStates.Position = info.position;
+    if (this.exampleStates.TargetPosition < 0) {
+      this.exampleStates.TargetPosition = this.exampleStates.Position;
+    }
+    return info.position;
+  }
+
+  private async setEasyrollPosition(target: number) {
+    return request.post(`http://${this.ip}:20318/action`)
+      .send({
+        mode: 'level',
+        command: posFlip(target),
+      });
+  }
+
+  private async sendEasyrollCommand(command: string) {
+    return request.post(`http://${this.ip}:20318/action`)
+      .send({
+        mode: 'general',
+        command: command,
+      });
+  }
+
   private watchMoving() {
     if (this.intervalPosition) {
       clearInterval(this.intervalPosition);
@@ -84,9 +164,9 @@ export class EasyrollAccessory {
     let prev = this.exampleStates.Position;
     this.intervalPosition = setInterval(async () => {
       const currentPosition = await this.getEasyrollInfo();
-      this.platform.log.debug(`Moving ${prev} => ${currentPosition}`);
-      this.service.updateCharacteristic(this.platform.Characteristic.CurrentPosition, prev);
-      this.service.updateCharacteristic(this.platform.Characteristic.TargetPosition, currentPosition);
+      this.log.debug(`Moving ${prev} => ${currentPosition}`);
+      this.service.updateCharacteristic(hap.Characteristic.CurrentPosition, prev);
+      this.service.updateCharacteristic(hap.Characteristic.TargetPosition, currentPosition);
 
       this.exampleStates.Position = prev;
       this.exampleStates.TargetPosition = currentPosition;
@@ -98,80 +178,5 @@ export class EasyrollAccessory {
       }
       prev = currentPosition;
     }, 1000);
-  }
-
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
-  setOn(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-
-    // implement your own code to turn your device on/off
-    this.exampleStates.On = value as boolean;
-
-    this.platform.log.debug('Set Characteristic On ->', value);
-
-    // you must call the callback function
-    callback(null);
-  }
-
-  getOn(callback: CharacteristicGetCallback) {
-    const isOn = this.exampleStates.On;
-
-    this.platform.log.debug('Get Characteristic On ->', isOn);
-    callback(null, isOn);
-  }
-
-
-  async getPosition(callback: CharacteristicSetCallback) {
-    const currentPosition = await this.getEasyrollInfo();
-    this.platform.log.debug('Get Characteristic Position', currentPosition);
-    callback(null, currentPosition);
-  }
-
-  async getTargetPosition(callback: CharacteristicSetCallback) {
-    if (this.exampleStates.TargetPosition < 0) {
-      const currentPosition = await this.getEasyrollInfo();
-      this.exampleStates.TargetPosition = currentPosition;
-    }
-    this.platform.log.debug('Get Characteristic Target Position', this.exampleStates.TargetPosition);
-    callback(null, this.exampleStates.TargetPosition);
-  }
-
-  private async getEasyrollInfo(): Promise<number> {
-    const res = await request.get('http://192.168.0.70:20318/lstinfo');
-    const info = JSON.parse(res.text);
-    info.position = posFlip(Math.floor(info.position));
-    this.exampleStates.Position = info.position;
-    if (this.exampleStates.TargetPosition < 0) {
-      this.exampleStates.TargetPosition = this.exampleStates.Position;
-    }
-    return info.position;
-  }
-
-  private async setEasyrollPosition(target: number) {
-    return request.post('http://192.168.0.70:20318/action')
-      .send({
-        mode: 'level',
-        command: posFlip(target),
-      });
-  }
-
-  private async sendEasyrollCommand(command: string) {
-    return request.post('http://192.168.0.70:20318/action')
-      .send({
-        mode: 'general',
-        command: command,
-      });
-  }
-
-  async setTargetPosition(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-    this.platform.log.debug('Set Characteristic Target Position -> ', value);
-    this.exampleStates.TargetPosition = value as number;
-    callback(null);
-
-    await this.setEasyrollPosition(this.exampleStates.TargetPosition);
-
-    this.watchMoving();
   }
 }

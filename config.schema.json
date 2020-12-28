@@ -1,7 +1,7 @@
 {
-  "pluginAlias": "EasyrollHomebridgePlugin",
-  "pluginType": "platform",
-  "singular": true,
+  "pluginAlias": "easyroll",
+  "pluginType": "accessory",
+  "singular": false,
   "schema": {
     "type": "object",
     "properties": {
@@ -9,7 +9,14 @@
         "title": "Name",
         "type": "string",
         "required": true,
-        "default": "Example Dynamic Platform"
+        "default": "Easyroll Blind",
+        "description": "Name of accessory, as displayed in HomeKit."
+      },
+      "ip": {
+        "type": "string",
+        "title": "ip",
+        "required": true,
+        "description": "IP of an Easyroll blind"
       }
     }
   }
