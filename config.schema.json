@@ -13,10 +13,14 @@
         "description": "Name of accessory, as displayed in HomeKit."
       },
       "ip": {
-        "type": "string",
+        "type": "array",
         "title": "ip",
         "required": true,
-        "description": "IP of an Easyroll blind"
+        "description": "IPs of a group of an Easyroll blind",
+        "items": {
+          "title": "IP",
+          "type": "string"
+        }
       }
     }
   }

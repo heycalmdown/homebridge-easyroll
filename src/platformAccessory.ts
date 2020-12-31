@@ -29,7 +29,7 @@ export = (api: API) => {
 class EasyrollAccessory implements AccessoryPlugin {
   private readonly log: Logging;
   private readonly name: string;
-  private readonly ip: string;
+  private readonly ips: string[];
   private exampleStates = {
     On: true,
     Position: 100,
@@ -45,7 +45,7 @@ class EasyrollAccessory implements AccessoryPlugin {
   constructor(log: Logging, config: AccessoryConfig) {
     this.log = log;
     this.name = config.name;
-    this.ip = config.ip as string;
+    this.ips = config.ip as string[];
 
     this.informationService = new hap.Service.AccessoryInformation()
       .setCharacteristic(hap.Characteristic.Manufacturer, 'Default-Manufacturer')
@@ -131,7 +131,7 @@ class EasyrollAccessory implements AccessoryPlugin {
   }
 
   private async getEasyrollInfo(): Promise<number> {
-    const res = await request.get(`http://${this.ip}:20318/lstinfo`);
+    const res = await request.get(`http://${this.ips[0]}:20318/lstinfo`);
     const info = JSON.parse(res.text);
     info.position = posFlip(Math.floor(info.position));
     this.exampleStates.Position = info.position;
@@ -142,19 +142,23 @@ class EasyrollAccessory implements AccessoryPlugin {
   }
 
   private async setEasyrollPosition(target: number) {
-    return request.post(`http://${this.ip}:20318/action`)
-      .send({
-        mode: 'level',
-        command: posFlip(target),
-      });
+    return Promise.all(this.ips.map(ip => {
+      return request.post(`http://${ip}:20318/action`)
+        .send({
+          mode: 'level',
+          command: posFlip(target),
+        });
+    })).then(res => res[0]);
   }
 
   private async sendEasyrollCommand(command: string) {
-    return request.post(`http://${this.ip}:20318/action`)
-      .send({
-        mode: 'general',
-        command: command,
-      });
+    return Promise.all(this.ips.map(ip => {
+      return request.post(`http://${ip}:20318/action`)
+        .send({
+          mode: 'general',
+          command: command,
+        });
+    })).then(res => res[0]);
   }
 
   private watchMoving() {
