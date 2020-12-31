@@ -48,25 +48,25 @@ class EasyrollAccessory implements AccessoryPlugin {
     this.ips = config.ip as string[];
 
     this.informationService = new hap.Service.AccessoryInformation()
-      .setCharacteristic(hap.Characteristic.Manufacturer, 'Default-Manufacturer')
-      .setCharacteristic(hap.Characteristic.Model, 'Default-Model')
-      .setCharacteristic(hap.Characteristic.SerialNumber, 'Default-Serial');
+      .setCharacteristic(hap.Characteristic.Manufacturer, 'INOSHADE')
+      .setCharacteristic(hap.Characteristic.Model, 'Smart Blind')
+      .setCharacteristic(hap.Characteristic.SerialNumber, `INOSHADE-${this.ips.join('+')}`);
 
     this.service = new hap.Service.WindowCovering(this.name);
     this.service.getCharacteristic(hap.Characteristic.On)
       .on(CharacteristicEventTypes.SET, (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
         this.exampleStates.On = value as boolean;
-        log.debug('Set Characteristic On ->', value);
+        log.info('Set On', value);
         callback(null);
       })
       .on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-        log.debug('Get Characteristic On ->', this.exampleStates.On);
+        log.info('Get On', this.exampleStates.On);
         callback(null, this.exampleStates.On);
       });
     this.service.getCharacteristic(hap.Characteristic.CurrentPosition)
       .on(CharacteristicEventTypes.GET, async (callback: CharacteristicSetCallback) => {
         const currentPosition = await this.getEasyrollInfo();
-        log.debug('Get Characteristic Position', currentPosition);
+        log.info('Get Position', currentPosition);
         callback(null, currentPosition);
       });
 
@@ -76,17 +76,17 @@ class EasyrollAccessory implements AccessoryPlugin {
           const currentPosition = await this.getEasyrollInfo();
           this.exampleStates.TargetPosition = currentPosition;
         }
-        log.debug('Get Characteristic Target Position', this.exampleStates.TargetPosition);
+        log.info('Get TargetPosition', this.exampleStates.TargetPosition);
         callback(null, this.exampleStates.TargetPosition);
       })
       .on(CharacteristicEventTypes.SET, async (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
-        log.debug('Set Characteristic Target Position -> ', value);
+        log.info('Set TargetPosition', value);
         this.exampleStates.TargetPosition = value as number;
         callback(null);
     
         await this.setEasyrollPosition(this.exampleStates.TargetPosition);
     
-        this.watchMoving();
+        this.watchMoving(this.exampleStates.TargetPosition);
       });
 
 
@@ -95,13 +95,13 @@ class EasyrollAccessory implements AccessoryPlugin {
       b.getCharacteristic(hap.Characteristic.On)
         .on(CharacteristicEventTypes.GET, cb => cb(null, false))
         .on(CharacteristicEventTypes.SET, async (input: CharacteristicValue, cb: CharacteristicSetCallback) => {
-          log.debug('Set Characteristic ProgrammableSwitchEvent ->', input);
+          log.info('Set ProgrammableSwitchEvent', input);
           cb(null);
 
           await this.sendEasyrollCommand('M' + (i + 1));
           setTimeout(() => {
             b.updateCharacteristic(hap.Characteristic.On, false);
-          }, 500);
+          }, 1000);
           this.watchMoving();
         });
       this.service.addLinkedService(b);
@@ -161,16 +161,16 @@ class EasyrollAccessory implements AccessoryPlugin {
     })).then(res => res[0]);
   }
 
-  private watchMoving() {
+  private watchMoving(targetPosition = -1) {
     if (this.intervalPosition) {
       clearInterval(this.intervalPosition);
     }
     let prev = this.exampleStates.Position;
     this.intervalPosition = setInterval(async () => {
       const currentPosition = await this.getEasyrollInfo();
-      this.log.debug(`Moving ${prev} => ${currentPosition}`);
+      this.log.info(`Moving ${prev} => ${currentPosition} => ${targetPosition}`);
       this.service.updateCharacteristic(hap.Characteristic.CurrentPosition, prev);
-      this.service.updateCharacteristic(hap.Characteristic.TargetPosition, currentPosition);
+      this.service.updateCharacteristic(hap.Characteristic.TargetPosition, targetPosition >= 0 && targetPosition || currentPosition);
 
       this.exampleStates.Position = prev;
       this.exampleStates.TargetPosition = currentPosition;
