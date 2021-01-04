@@ -30,7 +30,7 @@
     "@types/superagent": "4.1.10",
     "@typescript-eslint/eslint-plugin": "4.6.1",
     "@typescript-eslint/parser": "4.6.1",
-    "eslint": "7.16.0",
+    "eslint": "7.17.0",
     "homebridge": "1.2.3",
     "nodemon": "2.0.6",
     "rimraf": "3.0.2",
