@@ -60,12 +60,12 @@ class EasyrollAccessory implements AccessoryPlugin {
         callback(null);
       })
       .on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-        log.info('Get On', this.exampleStates.On);
+        log.info('Got On', this.exampleStates.On);
         callback(null, this.exampleStates.On);
       });
     this.service.getCharacteristic(hap.Characteristic.CurrentPosition)
       .on(CharacteristicEventTypes.GET, async (callback: CharacteristicSetCallback) => {
-        log.info('Get Position', this.exampleStates.Position);
+        log.info('Got Position', this.exampleStates.Position);
         callback(null, this.exampleStates.Position);
 
         setTimeout(async () => {
@@ -87,6 +87,9 @@ class EasyrollAccessory implements AccessoryPlugin {
             log.info('Update TargetPosition', this.exampleStates.TargetPosition);
             this.service.updateCharacteristic(hap.Characteristic.TargetPosition, this.exampleStates.TargetPosition);
           }, 0);
+        } else {
+          log.info('Got TargetPosition', this.exampleStates.TargetPosition);
+          callback(null, this.exampleStates.TargetPosition);
         }
       })
       .on(CharacteristicEventTypes.SET, async (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
