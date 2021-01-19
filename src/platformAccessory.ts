@@ -65,19 +65,29 @@ class EasyrollAccessory implements AccessoryPlugin {
       });
     this.service.getCharacteristic(hap.Characteristic.CurrentPosition)
       .on(CharacteristicEventTypes.GET, async (callback: CharacteristicSetCallback) => {
-        const currentPosition = await this.getEasyrollInfo();
-        log.info('Get Position', currentPosition);
-        callback(null, currentPosition);
+        log.info('Get Position', this.exampleStates.Position);
+        callback(null, this.exampleStates.Position);
+
+        setTimeout(async () => {
+          const currentPosition = await this.getEasyrollInfo();
+          log.info('Update Position', this.exampleStates.Position);
+          this.service.updateCharacteristic(hap.Characteristic.CurrentPosition, currentPosition);
+        }, 0);
       });
 
     this.service.getCharacteristic(hap.Characteristic.TargetPosition)
       .on(CharacteristicEventTypes.GET, async (callback: CharacteristicSetCallback) => {
         if (this.exampleStates.TargetPosition < 0) {
-          const currentPosition = await this.getEasyrollInfo();
-          this.exampleStates.TargetPosition = currentPosition;
+          log.info('Got TargetPosition at just started');
+          callback(null, this.exampleStates.Position); // random position
+
+          setTimeout(async () => {
+            const currentPosition = await this.getEasyrollInfo();
+            this.exampleStates.TargetPosition = currentPosition;
+            log.info('Update TargetPosition', this.exampleStates.TargetPosition);
+            this.service.updateCharacteristic(hap.Characteristic.TargetPosition, this.exampleStates.TargetPosition);
+          }, 0);
         }
-        log.info('Get TargetPosition', this.exampleStates.TargetPosition);
-        callback(null, this.exampleStates.TargetPosition);
       })
       .on(CharacteristicEventTypes.SET, async (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
         log.info('Set TargetPosition', value);
@@ -135,9 +145,6 @@ class EasyrollAccessory implements AccessoryPlugin {
     const info = JSON.parse(res.text);
     info.position = posFlip(Math.floor(info.position));
     this.exampleStates.Position = info.position;
-    if (this.exampleStates.TargetPosition < 0) {
-      this.exampleStates.TargetPosition = this.exampleStates.Position;
-    }
     return info.position;
   }
 
