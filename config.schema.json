@@ -21,6 +21,12 @@
           "title": "IP",
           "type": "string"
         }
+      },
+      "flip": {
+        "type": "boolean",
+        "title": "flip",
+        "required": false,
+        "description": "Flip the direction"
       }
     }
   }

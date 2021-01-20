@@ -12,10 +12,6 @@ import {
 } from 'homebridge';
 import * as request from 'superagent';
 
-function posFlip(pos: number): number {
-  return 100 - pos;
-}
-
 let hap: HAP;
 
 /*
@@ -30,6 +26,7 @@ class EasyrollAccessory implements AccessoryPlugin {
   private readonly log: Logging;
   private readonly name: string;
   private readonly ips: string[];
+  private readonly flip: boolean;
   private exampleStates = {
     On: true,
     Position: 100,
@@ -46,6 +43,7 @@ class EasyrollAccessory implements AccessoryPlugin {
     this.log = log;
     this.name = config.name;
     this.ips = config.ip as string[];
+    this.flip = !!config.flip;
 
     this.informationService = new hap.Service.AccessoryInformation()
       .setCharacteristic(hap.Characteristic.Manufacturer, 'INOSHADE')
@@ -131,10 +129,6 @@ class EasyrollAccessory implements AccessoryPlugin {
     this.log('Identify!');
   }
 
-  /*
-   * This method is called directly after creation of this instance.
-   * It should return all services which should be added to the accessory.
-   */
   getServices(): Service[] {
     return [
       this.informationService,
@@ -143,10 +137,18 @@ class EasyrollAccessory implements AccessoryPlugin {
     ];
   }
 
+  // easy-roll has the reversed  coordination system against HomeKit
+  private posFlip(pos: number): number {
+    if (this.flip) {
+      return pos;
+    }
+    return 100 - pos;
+  }
+
   private async getEasyrollInfo(): Promise<number> {
     const res = await request.get(`http://${this.ips[0]}:20318/lstinfo`);
     const info = JSON.parse(res.text);
-    info.position = posFlip(Math.floor(info.position));
+    info.position = this.posFlip(Math.floor(info.position));
     this.exampleStates.Position = info.position;
     return info.position;
   }
@@ -156,7 +158,7 @@ class EasyrollAccessory implements AccessoryPlugin {
       return request.post(`http://${ip}:20318/action`)
         .send({
           mode: 'level',
-          command: posFlip(target),
+          command: this.posFlip(target),
         });
     })).then(res => res[0]);
   }
